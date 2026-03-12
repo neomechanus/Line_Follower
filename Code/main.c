@@ -33,7 +33,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define THRESHOLD 2048  
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -67,39 +67,48 @@ uint16_t Sensor_values[16];
 void read_all_sensors(){
     for(uint8_t i = 0; i < 16; i++){
 
-        // Set mux channel
         HAL_GPIO_WritePin(GPIOB, GPIO_PIN_2, (i >> 0) & 0x01);
         HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, (i >> 1) & 0x01);
         HAL_GPIO_WritePin(GPIOA, GPIO_PIN_7, (i >> 2) & 0x01);
         HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, (i >> 3) & 0x01);
 
-        HAL_Delay(1);  // let mux settle
+        HAL_Delay(1);
 
-        // Start conversion
-        data_flag = 0;
+
         HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc_value, 1);
 
-        // Wait for DMA complete
-        while(!data_flag);
-
+       if(data_flag);  // wait for conversion
+       data_flag = 0;
         Sensor_values[i] = adc_value[0];
     }
 }
 
+
 void print_all_sensors(){
-	for(uint8_t i=0;i<16;i++){
-		char buf[64];
-		sprintf(buf, "%d\r\n", Sensor_values[i]);   // [0] not the array pointer
-		CDC_Transmit_FS((uint8_t*)buf, strlen(buf));
-	    HAL_Delay(200);
-
-	}
-
+    char buf[128];
+    sprintf(buf, "%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\r\n",
+        Sensor_values[0]  > THRESHOLD ? 1 : 0,
+        Sensor_values[1]  > THRESHOLD ? 1 : 0,
+        Sensor_values[2]  > THRESHOLD ? 1 : 0,
+        Sensor_values[3]  > THRESHOLD ? 1 : 0,
+        Sensor_values[4]  > THRESHOLD ? 1 : 0,
+        Sensor_values[5]  > THRESHOLD ? 1 : 0,
+        Sensor_values[6]  > THRESHOLD ? 1 : 0,
+        Sensor_values[7]  > THRESHOLD ? 1 : 0,
+        Sensor_values[8]  > THRESHOLD ? 1 : 0,
+        Sensor_values[9]  > THRESHOLD ? 1 : 0,
+        Sensor_values[10] > THRESHOLD ? 1 : 0,
+        Sensor_values[11] > THRESHOLD ? 1 : 0,
+        Sensor_values[12] > THRESHOLD ? 1 : 0,
+        Sensor_values[13] > THRESHOLD ? 1 : 0,
+        Sensor_values[14] > THRESHOLD ? 1 : 0,
+        Sensor_values[15] > THRESHOLD ? 1 : 0);
+    CDC_Transmit_FS((uint8_t*)buf, strlen(buf));
 }
 
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc){
 
-	data_flag =1;
+	data_flag = 1;
 }
 /* USER CODE END 0 */
 
@@ -148,7 +157,7 @@ int main(void)
     /* USER CODE BEGIN 3 */
 	  read_all_sensors();
 	  print_all_sensors();
-	  HAL_Delay(100);
+
 
 
 
@@ -179,9 +188,9 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
   RCC_OscInitStruct.PLL.PLLM = 4;
-  RCC_OscInitStruct.PLL.PLLN = 72;
+  RCC_OscInitStruct.PLL.PLLN = 168;
   RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
-  RCC_OscInitStruct.PLL.PLLQ = 3;
+  RCC_OscInitStruct.PLL.PLLQ = 7;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
     Error_Handler();
@@ -193,10 +202,10 @@ void SystemClock_Config(void)
                               |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
-  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
-  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV4;
+  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV2;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_5) != HAL_OK)
   {
     Error_Handler();
   }
@@ -223,7 +232,7 @@ static void MX_ADC1_Init(void)
   /** Configure the global features of the ADC (Clock, Resolution, Data Alignment and number of conversion)
   */
   hadc1.Instance = ADC1;
-  hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV2;
+  hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
   hadc1.Init.Resolution = ADC_RESOLUTION_12B;
   hadc1.Init.ScanConvMode = DISABLE;
   hadc1.Init.ContinuousConvMode = DISABLE;
@@ -232,7 +241,7 @@ static void MX_ADC1_Init(void)
   hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
   hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
   hadc1.Init.NbrOfConversion = 1;
-  hadc1.Init.DMAContinuousRequests = DISABLE;
+  hadc1.Init.DMAContinuousRequests = ENABLE;
   hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
   if (HAL_ADC_Init(&hadc1) != HAL_OK)
   {
