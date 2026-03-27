@@ -2,7 +2,7 @@
 /**
   ******************************************************************************
   * @file           : main.c
-  * @brief          
+  * @brief          : Final Logic-Verified Line Follower
   ******************************************************************************
   */
 /* USER CODE END Header */
@@ -30,13 +30,13 @@
 /* USER CODE BEGIN PD */
 #define THRESHOLD       2000
 #define NUM_SENSORS     16
-#define BASE_SPEED      300
+#define BASE_SPEED      500
 #define MIN_SPEED       0     /* Strictly No Negative */
 #define MAX_SPEED       1000
 
-#define KP              4.5f
-#define KI              0.0005f
-#define KD              1.2f
+#define KP   16.9f   /* start here: 2.0 × 75° = ±150 speed change */
+#define KI   0.0004f
+#define KD   39.0f
 
 #define TURBINE_ARM     1000
 #define TURBINE_SPEED   1350
@@ -67,7 +67,7 @@ float pid_integral   = 0.0f;
 float pid_position   = 75.0f;
 int32_t left_speed   = 0;
 int32_t right_speed  = 0;
-uint8_t line_is_lost = 0;  /* LOGIC FIX: Explicit flag for line status */
+uint8_t line_is_lost = 0;
 uint8_t junction_detected = 0;
 /* USER CODE END PV */
 
@@ -147,9 +147,8 @@ void pid_update(void) {
 
     if (num_clusters == 0) {
         line_is_lost = 1;
-        pid_integral = 0; /* LOGIC FIX: Reset integral so it doesn't wind up while searching */
+        pid_integral = 0;
 
-        /* Pivot Search: Use last error to decide direction */
         if (pid_last_error > 0) {
             left_speed = BASE_SPEED; right_speed = 0;
         } else {
@@ -280,10 +279,15 @@ int main(void)
 
   /* Turbine Arming */
 
-  TIM3->CCR2 = TURBINE_ARM;
-  HAL_Delay(3000);
-  TIM3->CCR2 = TURBINE_SPEED;
+  TIM3->CCR1 = 2000;
+    HAL_Delay(2000);
 
+    // 2. Drop to minimum throttle — ESC arms here
+    TIM3->CCR1 = 1000;
+    HAL_Delay(3000);  // Hold for ESC to beep and confirm arm
+
+    // 3. Now you can ramp up
+    	  TIM3->CCR1 = 2000; // Gentle start
   /* Initial Scan */
   start_sensor_scan();
 
