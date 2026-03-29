@@ -2,8 +2,19 @@
 /**
   ******************************************************************************
   * @file           : main.c
-  * @brief          : Line Follower 
- 
+  * @brief          : Line Follower — Clean Rewrite
+  *
+  * Changes from previous version:
+  *  - pid_update() and update_leds() moved OUT of ISR into main loop
+  *  - TIM5 period increased to 10 ms (safe scan window)
+  *  - TIM5 guarded: scan only starts when previous scan is complete
+  *  - sample_count is now per-sensor (reset on each new sensor)
+  *  - ESC arming corrected: CCR2 used for TIM3 CH2
+  *  - TIM5 stopped during calibration, restarted after
+  *  - junction_detected used to slow base speed at intersections
+  *  - update_leds() called every cycle
+  *  - TURBINE_ARM / TURBINE_SPEED constants used throughout
+  *  - Integral windup guard tightened
   ******************************************************************************
   */
 /* USER CODE END Header */
@@ -56,6 +67,7 @@ static volatile uint8_t  sample_count    = 0;   /* samples taken for THIS sensor
 static volatile uint32_t sensor_accumulator[NUM_SENSORS];
 static volatile uint8_t  sensors_ready   = 0;   /* set by ISR, cleared by main */
 static volatile uint8_t  scan_in_progress = 0;  /* guard against TIM5 overlap */
+static volatile uint16_t threshold_val[NUM_SENSORS];
 
 /* --- PID state ------------------------------------------------------------ */
 static float    pid_error      = 0.0f;
@@ -67,8 +79,7 @@ static int32_t  right_speed    = 0;
 static uint8_t  line_is_lost   = 0;
 static uint8_t  junction_detected = 0;
 
-/* --- Calibration ---------------------------------------------------------- */
-static uint16_t threshold_val  = 2000;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -126,7 +137,10 @@ static void start_sensor_scan(void)
  * Cluster detector
  * Groups consecutive above-threshold sensors into weighted-centroid clusters.
  * -------------------------------------------------------------------------- */
-typedef struct { float center; uint8_t count; } Cluster;
+typedef struct {
+	float center;
+	uint8_t count;
+}Cluster;
 
 static uint8_t find_clusters(Cluster *clusters)
 {
@@ -138,7 +152,7 @@ static uint8_t find_clusters(Cluster *clusters)
 
     for (uint8_t i = 0; i < NUM_SENSORS; i++)
     {
-        if (sensor_values[i] > threshold_val)
+    	if (sensor_values[i] > threshold_val[i])
         {
             weighted_sum += (i * 10.0f) * (float)sensor_values[i];
             total_weight += (float)sensor_values[i];
@@ -342,41 +356,54 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
  * -------------------------------------------------------------------------- */
 static void calibrate_sensors(void)
 {
-    uint16_t min_val = 4095;
-    uint16_t max_val = 0;
+    uint16_t min_val[NUM_SENSORS];
+    uint16_t max_val[NUM_SENSORS];
 
-    /* Stop TIM5 so it cannot interrupt the blocking calibration loop */
+    for (int i = 0; i < NUM_SENSORS; i++) {
+        min_val[i] = 4095;
+        max_val[i] = 0;
+    }
+
     HAL_TIM_Base_Stop_IT(&htim5);
 
-    /* Signal calibration mode: all LEDs on */
     HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12 | GPIO_PIN_13, GPIO_PIN_SET);
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2  | GPIO_PIN_3,  GPIO_PIN_SET);
 
     uint32_t t_start = HAL_GetTick();
     while ((HAL_GetTick() - t_start) < 3000)
     {
-        /* Blocking scan (safe here — TIM5 is stopped) */
-        scan_in_progress = 0;   /* ensure guard is clear */
+        scan_in_progress = 0;
         start_sensor_scan();
-        while (!sensors_ready);  /* wait for DMA to finish */
+        while (!sensors_ready);
         sensors_ready = 0;
 
         for (int i = 0; i < NUM_SENSORS; i++)
         {
-            if (sensor_values[i] < min_val) min_val = sensor_values[i];
-            if (sensor_values[i] > max_val) max_val = sensor_values[i];
+            if (sensor_values[i] < min_val[i]) min_val[i] = sensor_values[i];
+            if (sensor_values[i] > max_val[i]) max_val[i] = sensor_values[i];
         }
-
-        HAL_Delay(5);
     }
 
-    threshold_val = (uint16_t)((min_val + max_val) / 2);
+    /* Compute per-sensor thresholds */
+    for (int i = 0; i < NUM_SENSORS; i++)
+        threshold_val[i] = (min_val[i] + max_val[i]) / 2;
 
-    /* LEDs off — calibration done */
+    /* Average all thresholds to check calibration quality */
+    uint32_t sum = 0;
+    for (int i = 0; i < NUM_SENSORS; i++)
+        sum += threshold_val[i];
+    uint16_t avg_threshold = (uint16_t)(sum / NUM_SENSORS);
+
+    /* If average is too far from midpoint calibration was bad — reset to default */
+    if (avg_threshold < 1024 || avg_threshold > 3072)
+    {
+        for (int i = 0; i < NUM_SENSORS; i++)
+            threshold_val[i] = 2048;
+    }
+
     HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12 | GPIO_PIN_13, GPIO_PIN_RESET);
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2  | GPIO_PIN_3,  GPIO_PIN_RESET);
 
-    /* Restart TIM5 for normal operation */
     HAL_TIM_Base_Start_IT(&htim5);
 }
 
