@@ -6,7 +6,7 @@
   ******************************************************************************
   */
 /* USER CODE END Header */
-
+#define testVariable
 #include "main.h"
 #include "usb_device.h"
 
