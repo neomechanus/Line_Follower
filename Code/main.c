@@ -2,19 +2,8 @@
 /**
   ******************************************************************************
   * @file           : main.c
-  * @brief          : Line Follower — Clean Rewrite
-  *
-  * Changes from previous version:
-  *  - pid_update() and update_leds() moved OUT of ISR into main loop
-  *  - TIM5 period increased to 10 ms (safe scan window)
-  *  - TIM5 guarded: scan only starts when previous scan is complete
-  *  - sample_count is now per-sensor (reset on each new sensor)
-  *  - ESC arming corrected: CCR2 used for TIM3 CH2
-  *  - TIM5 stopped during calibration, restarted after
-  *  - junction_detected used to slow base speed at intersections
-  *  - update_leds() called every cycle
-  *  - TURBINE_ARM / TURBINE_SPEED constants used throughout
-  *  - Integral windup guard tightened
+  * @brief          : Line Follower 
+  
   ******************************************************************************
   */
 /* USER CODE END Header */
